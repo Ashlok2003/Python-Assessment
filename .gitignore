@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+.env/
+.env.*
+!.env.example
+.venv/
+virtualenv/
+ENV/
+
+# Dependency / Build
+pip-wheel-metadata/
+*.egg-info/
+.eggs/
+build/
+dist/
+wheels/
+pip-log.txt
+
+# Testing / Coverage
+.pytest_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+nosetests.xml
+
+# Logs
+*.log
+logs/
+
+# Environment & Secrets
+.env
+.env.local
+.env.production
+.env.development
+
+# VS Code
+.vscode/
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Database / Runtime
+*.sqlite3
+*.db
+*.pid
+
+# Cache / Temp
+.cache/
+.mypy_cache/
+.ruff_cache/
+.pyre/
+tmp/
+
+# Docker
+*.env.docker
+docker-compose.override.yml
+
+# IDEs
+.idea/
+*.iml
