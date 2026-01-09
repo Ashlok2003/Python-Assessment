@@ -1,155 +1,241 @@
-# Issue Tracker API
+# Issue Tracker API 🎫
 
-A REST API for managing issues, comments, and labels built with **Django** and **Django REST Framework**.
+Hey there! This is a REST API for managing issues, comments, and labels - think of it like a simplified Jira or GitHub Issues. Built with Django and Django REST Framework.
 
-## Features
+## What's Inside?
 
-- ✅ **Issue Management**: CRUD operations with optimistic concurrency control (versioning)
-- ✅ **Comments**: Add comments to issues with validation
-- ✅ **Labels**: Unique labels that can be assigned to issues
-- ✅ **Bulk Operations**: Transactional bulk status updates
-- ✅ **CSV Import**: Upload CSV for issue creation with validation and summary report
-- ✅ **Reports**: Top assignees and average resolution time
-- ✅ **Timeline**: Issue history tracking (bonus feature)
-- ✅ **Swagger UI**: Interactive API documentation
+This project covers most of what you'd need in a real issue tracker:
+- **Issues** with full CRUD, plus optimistic locking so two people don't overwrite each other's changes
+- **Comments** on issues (can't be empty, obviously)
+- **Labels** that you can attach to issues
+- **Bulk updates** - change status of multiple issues at once, all-or-nothing
+- **CSV import** - upload a spreadsheet of issues
+- **Reports** - who's got the most issues assigned, how fast are we resolving stuff
+- **Timeline** - see the history of changes on an issue (bonus feature!)
 
-## Quick Start
+## Architecture Overview
 
-### Option 1: Local Development (SQLite)
+Here's how the pieces fit together:
+
+```mermaid
+flowchart TB
+    subgraph Client
+        Browser[Browser / Swagger UI]
+        CLI[curl / httpie]
+    end
+
+    subgraph Django["Django Application"]
+        URLs[URL Router]
+        Views[ViewSets & Views]
+        Serial[Serializers]
+        Models[Models / ORM]
+    end
+
+    subgraph External
+        DB[(PostgreSQL / SQLite)]
+        Swagger[OpenAPI Schema]
+    end
+
+    Browser --> |HTTP Request| URLs
+    CLI --> |HTTP Request| URLs
+    URLs --> Views
+    Views --> Serial
+    Serial --> |Validate & Transform| Views
+    Views --> Models
+    Models --> |SQL| DB
+    Views --> |JSON Response| Browser
+    URLs --> Swagger
+    Swagger --> |/api/docs/| Browser
+```
+
+## Database Design
+
+Four main tables with a junction table for the many-to-many relationship:
+
+```mermaid
+erDiagram
+    USER {
+        int id PK
+        string username
+        string email
+    }
+
+    ISSUE {
+        int id PK
+        string title
+        text description
+        enum status
+        int version
+        int reporter_id FK
+        int assignee_id FK
+        datetime created_at
+        datetime resolved_at
+    }
+
+    COMMENT {
+        int id PK
+        text body
+        int issue_id FK
+        int author_id FK
+        datetime created_at
+    }
+
+    LABEL {
+        int id PK
+        string name UK
+        datetime created_at
+    }
+
+    ISSUE_HISTORY {
+        int id PK
+        int issue_id FK
+        enum change_type
+        text old_value
+        text new_value
+        datetime timestamp
+    }
+
+    USER ||--o{ ISSUE : "reports"
+    USER ||--o{ ISSUE : "assigned to"
+    USER ||--o{ COMMENT : "writes"
+    ISSUE ||--o{ COMMENT : "has"
+    ISSUE }o--o{ LABEL : "tagged with"
+    ISSUE ||--o{ ISSUE_HISTORY : "tracks"
+```
+
+**Why the `version` field?** It's for optimistic concurrency control. When you update an issue, you send the version you have. If someone else updated it first, the versions won't match and you'll get an error. No accidental overwrites.
+
+## Getting Started
+
+### Quick Start (SQLite, no Docker needed)
 
 ```bash
-# Clone and setup
-cd python-assessment
+# Set up the project
 make setup
-
-# Activate virtual environment
 source venv/bin/activate
 
-# Run migrations
+# Create tables and add some test data
 make migrate
-
-# Create sample data
 make seed
 
-# Start server
+# Fire it up
 make run
 ```
 
-Visit http://localhost:8000 for Swagger UI.
+Now open http://localhost:8000 - you'll see the Swagger UI where you can try out every endpoint.
 
-### Option 2: Docker (PostgreSQL)
+### With Docker (PostgreSQL)
 
 ```bash
-# Build and start containers
 make docker-up
-
-# View logs
-make docker-logs
 ```
 
-Visit http://localhost:8000 for Swagger UI.
+Same deal, just go to http://localhost:8000.
 
 ## API Endpoints
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/issues/` | POST | Create new issue |
-| `/api/issues/` | GET | List issues (filter + pagination) |
-| `/api/issues/{id}/` | GET | Get issue with comments & labels |
-| `/api/issues/{id}/` | PATCH | Update issue (with version check) |
-| `/api/issues/{id}/comments/` | POST | Add comment |
-| `/api/issues/{id}/labels/` | PUT | Replace labels atomically |
-| `/api/issues/{id}/timeline/` | GET | Get issue history (bonus) |
-| `/api/issues/bulk-status/` | POST | Bulk status update |
-| `/api/issues/import/` | POST | CSV upload for issue import |
-| `/api/reports/top-assignees/` | GET | Top assignees report |
-| `/api/reports/latency/` | GET | Average resolution time report |
-| `/api/labels/` | GET/POST | Label CRUD |
+| Endpoint | What it does |
+|----------|--------------|
+| `GET /api/issues/` | List all issues (has filtering & pagination) |
+| `POST /api/issues/` | Create a new issue |
+| `GET /api/issues/{id}/` | Get one issue with its comments and labels |
+| `PATCH /api/issues/{id}/` | Update an issue (include `version`!) |
+| `POST /api/issues/{id}/comments/` | Add a comment |
+| `PUT /api/issues/{id}/labels/` | Replace all labels on an issue |
+| `GET /api/issues/{id}/timeline/` | See change history |
+| `POST /api/issues/bulk-status/` | Update multiple issues at once |
+| `POST /api/issues/import/` | Upload CSV to create issues |
+| `GET /api/reports/top-assignees/` | Who has the most issues? |
+| `GET /api/reports/latency/` | How fast are issues being resolved? |
 
-## Optimistic Concurrency Control
+## How Optimistic Locking Works
 
-When updating an issue, include the current `version` number:
+Here's the flow:
 
-```bash
-# Get current issue
-curl http://localhost:8000/api/issues/1/
+```mermaid
+sequenceDiagram
+    participant C1 as Client A
+    participant C2 as Client B
+    participant API as Issue Tracker API
+    participant DB as Database
 
-# Update with version check
-curl -X PATCH http://localhost:8000/api/issues/1/ \
-  -H "Content-Type: application/json" \
-  -d '{"status": "resolved", "version": 1}'
+    C1->>API: GET /issues/1/
+    API->>DB: SELECT * FROM issues WHERE id=1
+    DB-->>API: {id: 1, title: "Bug", version: 1}
+    API-->>C1: {id: 1, title: "Bug", version: 1}
+
+    C2->>API: GET /issues/1/
+    API-->>C2: {id: 1, title: "Bug", version: 1}
+
+    C1->>API: PATCH /issues/1/ {title: "Fixed Bug", version: 1}
+    API->>DB: UPDATE issues SET title="Fixed Bug", version=2 WHERE id=1 AND version=1
+    DB-->>API: 1 row updated
+    API-->>C1: 200 OK {version: 2}
+
+    C2->>API: PATCH /issues/1/ {title: "Critical Bug", version: 1}
+    API->>DB: Check version
+    Note over API: Version mismatch! Expected 1, current is 2
+    API-->>C2: 400 Bad Request "Version conflict. Current version is 2."
 ```
-
-If another request has modified the issue (version mismatch), you'll get a `400 Bad Request` with the current version.
 
 ## CSV Import Format
 
+Your CSV should look like this:
+
 ```csv
 title,description,status,reporter_username,assignee_username
-"Fix login bug","Users cannot login","open","john","jane"
-"Add dark mode","Implement dark theme","in_progress","jane","john"
+"Login page broken","Users can't log in","open","john","jane"
+"Add dark mode","Would be nice to have","in_progress","jane","bob"
 ```
 
-Upload:
-```bash
-curl -X POST http://localhost:8000/api/issues/import/ \
-  -F file=@issues.csv
-```
-
-## Makefile Commands
-
-```bash
-make setup          # Create venv and install dependencies
-make run            # Start development server
-make migrate        # Apply database migrations
-make seed           # Create sample data
-make test           # Run tests
-make docker-up      # Start Docker containers
-make docker-down    # Stop Docker containers
-make lint           # Run linting
-make format         # Format code with Black
+Upload it and you'll get back a report:
+```json
+{
+  "total_rows": 2,
+  "successful": 2,
+  "failed": 0,
+  "errors": []
+}
 ```
 
 ## Project Structure
 
 ```
-python-assessment/
-├── issue_tracker/          # Django project settings
-│   ├── settings.py
-│   ├── urls.py
-│   └── wsgi.py
-├── tracker/                # Main application
-│   ├── models.py           # Database models
-│   ├── serializers.py      # DRF serializers
-│   ├── views.py            # ViewSets
-│   ├── reports.py          # Report views
-│   ├── urls.py             # API routing
-│   └── admin.py            # Admin configuration
-├── Dockerfile
-├── docker-compose.yml
-├── Makefile
-├── requirements.txt
-└── README.md
+├── issue_tracker/          # Django project config
+│   ├── settings.py         # All the settings
+│   └── urls.py             # Root URL routing + Swagger
+├── tracker/                # The actual app
+│   ├── models.py           # Issue, Comment, Label, IssueHistory
+│   ├── serializers.py      # Request/response validation
+│   ├── views.py            # All the endpoint logic
+│   ├── reports.py          # Report endpoints
+│   └── admin.py            # Django admin setup
+├── tests/                  # Pytest tests
+├── Dockerfile              # For containerization
+├── docker-compose.yml      # PostgreSQL + app
+└── Makefile                # Handy shortcuts
 ```
 
-## Technology Stack
+## Useful Commands
 
-- **Python 3.11+**
+```bash
+make run            # Start the dev server
+make test           # Run the test suite
+make docker-up      # Spin up with Docker
+make docker-down    # Tear it down
+make seed           # Create sample data
+make shell          # Django shell for debugging
+```
+
+## Tech Stack
+
 - **Django 4.2+** - Web framework
-- **Django REST Framework** - REST API
-- **drf-spectacular** - OpenAPI/Swagger documentation
+- **Django REST Framework** - API toolkit
+- **drf-spectacular** - Auto-generated Swagger docs
 - **PostgreSQL** - Production database
-- **SQLite** - Development database
+- **SQLite** - Development (zero config)
 - **Docker** - Containerization
-- **Gunicorn** - Production WSGI server
 
-## Evaluation Criteria Coverage
+---
 
-| Area | Points | Implementation |
-|------|--------|----------------|
-| API correctness (CRUD, filtering, CSV) | 30 | ✅ Full CRUD, filtering, pagination, CSV import with validation |
-| Concurrency & transactions | 25 | ✅ Optimistic locking with version field, atomic bulk updates |
-| Code structure & clarity | 20 | ✅ Clean separation of models, serializers, views |
-| Error handling & validation | 15 | ✅ Serializer validation, proper HTTP status codes |
-| Tests & documentation | 10 | ✅ Swagger docs, README, sample tests |
-| **Bonus: Timeline** | +5 | ✅ Issue history tracking endpoint |
+Built as a backend assessment project. Feel free to poke around!
