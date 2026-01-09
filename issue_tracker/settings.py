@@ -32,6 +32,12 @@ DEBUG = os.getenv('DEBUG', 'True').lower() == 'true'
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# CSRF trusted origins for production
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() if origin.startswith('http') else f'https://{origin.strip()}'
+    for origin in os.getenv('CSRF_TRUSTED_ORIGINS', 'localhost,127.0.0.1').split(',')
+]
+
 
 # Application definition
 
@@ -54,6 +60,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Serve static files in production
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
