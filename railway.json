@@ -4,8 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python manage.py migrate && python manage.py collectstatic --noinput && gunicorn issue_tracker.wsgi --bind 0.0.0.0:$PORT",
-    "healthcheckPath": "/api/docs/",
+    "startCommand": "python manage.py collectstatic --noinput && python manage.py migrate --run-syncdb && gunicorn issue_tracker.wsgi --bind 0.0.0.0:$PORT --timeout 120",
     "restartPolicyType": "ON_FAILURE"
   }
 }
