@@ -6,6 +6,7 @@ The `urlpatterns` list routes URLs to views. For more information please see:
 """
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularSwaggerView,
@@ -13,7 +14,15 @@ from drf_spectacular.views import (
 )
 
 
+def health_check(request):
+    """Simple health check endpoint for Railway."""
+    return JsonResponse({'status': 'ok'})
+
+
 urlpatterns = [
+    # Health check (must be first for fast response)
+    path('health/', health_check, name='health'),
+
     # Admin
     path('admin/', admin.site.urls),
 
